@@ -13,7 +13,7 @@ st.set_page_config(
 
 # Load image for sidebar
 st.sidebar.image('kaduna-removebg-preview.png', use_column_width=True)
-st.sidebar.markdown('Created by [Team ITApps](#)')
+# st.sidebar.markdown('Created by [Team ITApps](#)')
 
 # Setting up the connection
 conn = MySQLdb.connect(host="184.154.139.152",
@@ -24,14 +24,11 @@ cursor = conn.cursor()
 
 # Date range filter
 st.sidebar.markdown('Select a date range')
-start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-05-01"))
-end_date = st.sidebar.date_input("End Date", value=pd.to_datetime("2024-06-30"))
+start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2024-06-01"))
+end_date = st.sidebar.date_input("End Date", value=pd.to_datetime("2024-07-30"))
 
 # Read database data
-read_data = pd.read_sql_query(""" SELECT * FROM areaoffice   """, conn)
-
-# Total bill delivery
-bill_data = pd.read_sql_query("""SELECT * FROM billdeliverydev_check """, conn)
+read_data = pd.read_sql_query(""" SELECT * FROM areaoffice """, conn)
 
 # Total Visits by Area Office
 ao_data_query = f"""
@@ -113,7 +110,6 @@ delivered_data = pd.read_sql_query(query, conn)
 # Calculating total undelivered bills
 total_delivered = delivered_data['DeliveredBills'].sum()
 
-
 # SQL query to fetch undelivered data
 undelivered_query = f"""
     SELECT users.FullName AS Staff,
@@ -135,7 +131,6 @@ undelivered_data = pd.read_sql_query(undelivered_query, conn)
 # Calculating total undelivered bills
 total_undelivered = undelivered_data['UndeliveredBills'].sum()
 
-
 st.markdown('### Metrics')
 row1_1, row1_2, row1_3 = st.columns((3))
 with row1_1:
@@ -148,12 +143,10 @@ placeholder = st.empty()
 with placeholder.container():
     kpis = st.columns(5)
     kpis[0].metric(label="No. of Area Offices 🏠 ", value=read_data.shape[0], delta=read_data.shape[1])
-    kpis[1].metric(label="Total No. of Bills Delivered 🏠 ", value=total_delivered,
-                   delta=delivered_data.shape[1])
+    kpis[1].metric(label="Total No. of Bills Delivered 🏠 ", value=total_delivered, delta=delivered_data.shape[1])
     kpis[2].metric(label="Total Visits by Area Office 🏠 ", value=ao_data['Visits'].sum(), delta=ao_data.shape[1])
     kpis[3].metric(label="Total Delivered by Area Office 🏠 ", value=ao_data1['BillDelivered'].sum(), delta=ao_data1.shape[1])
-    kpis[4].metric(label="Total Undelivered by Area Office 🏠 ", value=total_undelivered,
-                   delta=undelivered_data.shape[1])
+    kpis[4].metric(label="Total Undelivered by Area Office 🏠 ", value=total_undelivered, delta=undelivered_data.shape[1])
 
 # Sidebar options
 option = st.sidebar.selectbox("Summary Report", ('Information', 'Area Office Summary'))
@@ -248,6 +241,37 @@ if option == 'Area Office Summary':
                  labels={'Feeder': 'Feeder', 'UndeliveredBills': 'Undelivered Bills'})
     st.plotly_chart(fig)
 
-    st.markdown("### Detailed Data View")
-    st.dataframe(bill_data)
+    # Plot line chart for the highest performing area office
+    highest_performing_office = ao_data1.iloc[0]['AreaOffice']
+    highest_office_query = f"""
+        SELECT DATE(billdeliverydev_check.trans_date) AS Date,
+               COUNT(billdeliverydev_check.postedby) AS BillDelivered
+        FROM billdeliverydev_check
+        INNER JOIN users ON billdeliverydev_check.postedby = users.id
+        JOIN areaoffice ON areaoffice.aoid = users.AreaOffice
+        WHERE billdeliverydev_check.trans_date BETWEEN '{start_date}' AND '{end_date}'
+          AND billdeliverydev_check.status = 'delivered'
+          AND areaoffice.area_office = '{highest_performing_office}'
+        GROUP BY Date
+        ORDER BY Date
+    """
+    highest_office_data = pd.read_sql_query(highest_office_query, conn)
+
+    st.markdown(f"## Performance of {highest_performing_office} Over Time")
+    fig3 = px.line(highest_office_data, x='Date', y='BillDelivered',
+                   title=f"Performance of {highest_performing_office} Over Time",
+                   labels={'Date': 'Date', 'BillDelivered': 'Delivered Bills'})
+    st.plotly_chart(fig3)
+
+    category_tr = ao_data1.groupby(by='AreaOffice')['BillDelivered'].sum().to_frame().sort_values(
+        'BillDelivered').reset_index()
+
+    fig = px.pie(category_tr, values='BillDelivered', names='AreaOffice',
+                 title='Total Bill Delivered By Area Office', width=1050, height=500,
+
+                 hover_data=['BillDelivered'], labels={'AreaOffice': 'Total Bill Delivered By Area Office'})
+    fig.update_traces(textposition='inside', textinfo='percent+label')
+
+    st.plotly_chart(fig)
+
     time.sleep(1)
